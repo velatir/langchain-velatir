@@ -49,7 +49,6 @@ async def main():
     # This will check all agent responses against GDPR, EU AI Act, and Bias policies
     guardrail_middleware = VelatirGuardrailMiddleware(
         api_key=velatir_api_key,
-        policies=["GDPR", "EU_AI_ACT", "BIAS_FAIRNESS"],
         mode="blocking",  # Block responses that violate policies
         blocked_message="This response was blocked due to compliance violations.",
     )

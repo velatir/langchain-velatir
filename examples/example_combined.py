@@ -53,7 +53,6 @@ async def main():
     # Create both middleware components
     guardrail_middleware = VelatirGuardrailMiddleware(
         api_key=velatir_api_key,
-        policies=["GDPR", "EU_AI_ACT", "BIAS_FAIRNESS"],
         mode="blocking",
     )
 
