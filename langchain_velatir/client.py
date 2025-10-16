@@ -5,7 +5,8 @@ from typing import Any, Optional
 
 try:
     import velatir
-    from velatir import Client as VelatirSDKClient, VelatirResponse
+    from velatir import Client as VelatirSDKClient
+    from velatir.models import VelatirResponse
 except ImportError:
     # For testing when velatir SDK is not installed
     try:
