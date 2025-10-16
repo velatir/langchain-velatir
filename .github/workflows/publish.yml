@@ -1,0 +1,56 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          # Extract version from tag (handles both v0.1.0 and 0.1.0)
+          VERSION="${GITHUB_REF#refs/tags/}"  # Remove refs/tags/
+          VERSION="${VERSION#v}"               # Remove v prefix if present
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Update version in files
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+
+          # Update pyproject.toml (using @ as delimiter to avoid issues with /)
+          sed -i "s@^version = .*@version = \"$VERSION\"@" pyproject.toml
+
+          # Update __init__.py
+          sed -i "s@__version__ = .*@__version__ = \"$VERSION\"@" langchain_velatir/__init__.py
+
+          echo "Updated version to $VERSION in:"
+          grep "version = " pyproject.toml
+          grep "__version__ = " langchain_velatir/__init__.py
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      - name: Check package
+        run: twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

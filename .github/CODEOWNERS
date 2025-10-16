@@ -1,0 +1,5 @@
+# Code owners will be requested for review on PRs
+
+* @velatir-team
+/langchain_velatir/ @velatir-team
+/.github/ @velatir-team
