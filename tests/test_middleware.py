@@ -76,12 +76,12 @@ class TestVelatirHITLMiddleware:
         assert middleware.require_approval_for == ["delete_file", "send_email"]
 
     @pytest.mark.asyncio
-    async def test_modify_model_request_hook_exists(self):
-        """Test that modify_model_request hook exists and is callable."""
+    async def test_after_model_hook_exists(self):
+        """Test that after_model hook exists and is callable."""
         middleware = VelatirHITLMiddleware(api_key="test-key")
 
-        assert hasattr(middleware, "modify_model_request")
-        assert callable(middleware.modify_model_request)
+        assert hasattr(middleware, "after_model")
+        assert callable(middleware.after_model)
 
 
 class TestMiddlewareIntegration:
@@ -96,4 +96,4 @@ class TestMiddlewareIntegration:
         assert guardrails is not None
         assert hitl is not None
         assert hasattr(guardrails, "after_agent")
-        assert hasattr(hitl, "modify_model_request")
+        assert hasattr(hitl, "after_model")

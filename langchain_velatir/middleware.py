@@ -333,9 +333,7 @@ class VelatirHITLMiddleware(AgentMiddleware):
         self.metadata = metadata or {}
 
     @hook_config(can_jump_to=["end"])
-    def after_model(
-        self, state: AgentState, runtime: Runtime
-    ) -> dict[str, Any] | None:
+    def after_model(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
         """
         Hook that runs after the model generates a response with tool calls.
 
