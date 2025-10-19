@@ -8,11 +8,8 @@ compliance checking to a LangChain agent.
 import asyncio
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
-
+from langchain.tools import tool
+from langchain.agents import create_agent
 from langchain_velatir import VelatirGuardrailMiddleware
 
 
@@ -33,8 +30,7 @@ async def main():
     """Run the guardrail example."""
     # Get API keys from environment
     velatir_api_key = os.getenv("VELATIR_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-
+   
     if not velatir_api_key:
         print("Please set VELATIR_API_KEY environment variable")
         return
@@ -42,45 +38,23 @@ async def main():
         print("Please set OPENAI_API_KEY environment variable")
         return
 
-    # Initialize the model
-    model = ChatOpenAI(model="gpt-4", api_key=openai_api_key)
-
-    # Create Velatir guardrail middleware
-    # This will check all agent responses against GDPR, EU AI Act, and Bias policies
-    guardrail_middleware = VelatirGuardrailMiddleware(
-        api_key=velatir_api_key,
-        mode="blocking",  # Block responses that violate policies
-        blocked_message="This response was blocked due to compliance violations.",
+    agent = create_agent(
+        model="openai:o3-mini",
+        tools=[search_database, send_email],
+        middleware=[
+            VelatirGuardrailMiddleware(
+                api_key=velatir_api_key,
+                mode="blocking",
+                blocked_message="This response was blocked due to compliance violations.",
+            )
+        ]
     )
 
-    # Create the agent with guardrails
-    tools = [search_database, send_email]
-
-    # Note: This is a simplified example. In LangChain 1.0, you would use:
-    # agent = create_react_agent(model, tools, middleware=[guardrail_middleware])
-
-    print("Example: Velatir Guardrail Middleware")
-    print("=" * 50)
-    print("\nThis agent has guardrails that check responses against:")
-    print("- GDPR compliance")
-    print("- EU AI Act requirements")
-    print("- Bias & Fairness policies")
-    print("\nAny responses that violate these policies will be blocked.\n")
-
-    # Example 1: Safe query
-    print("Example 1: Safe database query")
-    print("-" * 50)
-    result = await search_database.ainvoke({"query": "active customers"})
-    print(f"Result: {result}\n")
-
-    # Example 2: Query with PII concerns
-    print("Example 2: Query with potential PII concerns")
-    print("-" * 50)
-    result = await search_database.ainvoke({"query": "customers with social security numbers"})
-    print(f"Result: {result}")
-    print("Note: This would be reviewed by Velatir's policy engine\n")
-
-    print("\nGuardrails are active and monitoring all agent responses!")
+    # When user provides PII, it will be handled according to the strategy
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": "My email is john.doe@example.com and card is 4532-1234-5678-9010"}]
+    })
+        
 
 
 if __name__ == "__main__":

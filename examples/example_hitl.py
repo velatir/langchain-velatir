@@ -8,9 +8,8 @@ human approval before executing sensitive operations.
 import asyncio
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent
-from langchain_core.tools import tool
+from langchain.tools import tool
+from langchain.agents import create_agent
 
 from langchain_velatir import VelatirHITLMiddleware
 
@@ -38,7 +37,6 @@ async def main():
     """Run the HITL example."""
     # Get API keys from environment
     velatir_api_key = os.getenv("VELATIR_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
 
     if not velatir_api_key:
         print("Please set VELATIR_API_KEY environment variable")
@@ -46,9 +44,6 @@ async def main():
     if not openai_api_key:
         print("Please set OPENAI_API_KEY environment variable")
         return
-
-    # Initialize the model
-    model = ChatOpenAI(model="gpt-4", api_key=openai_api_key)
 
     # Create Velatir HITL middleware
     # This will require human approval for specific tools
@@ -62,8 +57,11 @@ async def main():
     # Create the agent with HITL
     tools = [read_file, delete_file, send_notification]
 
-    # Note: This is a simplified example. In LangChain 1.0, you would use:
-    # agent = create_react_agent(model, tools, middleware=[hitl_middleware])
+    agent = create_agent(
+        model="openai:o3-mini",
+        tools=tools,
+        middleware=[hitl_middleware]
+    )
 
     print("Example: Velatir Human-in-the-Loop Middleware")
     print("=" * 50)
@@ -72,26 +70,25 @@ async def main():
     print("- send_notification: Sending notifications")
     print("\nThe workflow will pause until a human approves or rejects.\n")
 
-    # Example 1: Safe operation (no approval needed)
-    print("Example 1: Reading a file (no approval needed)")
+    # Example: Agent workflow with HITL
+    print("Example: Agent processing a request")
     print("-" * 50)
-    result = await read_file.ainvoke({"path": "/data/report.txt"})
-    print(f"Result: {result}\n")
+    print("User: Use the delete_file tool to delete /data/old_report.txt and then use send_notification to notify users\n")
 
-    # Example 2: Sensitive operation (approval required)
-    print("Example 2: Deleting a file (approval required)")
-    print("-" * 50)
-    print("This operation will create a review task in Velatir...")
-    print("The workflow will pause until approved/rejected.")
-    print("Check your Velatir dashboard or Slack/Teams for the approval request.\n")
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": "Use the delete_file tool to delete the file at path /data/old_report.txt, then use the send_notification tool to send a message 'File deleted' with urgency 'high'"}]
+    })
 
-    try:
-        # This would wait for approval
-        result = await delete_file.ainvoke({"path": "/data/old_report.txt"})
-        print(f"Result: {result}")
-        print("Operation was APPROVED!\n")
-    except Exception as e:
-        print(f"Operation was DENIED: {e}\n")
+    print(f"\nAgent completed!")
+    print(f"Final response: {result['messages'][-1].content}")
+
+    # Show the tool calls that were made
+    print("\n" + "-" * 50)
+    print("Tool calls made during execution:")
+    for msg in result['messages']:
+        if hasattr(msg, 'tool_calls') and msg.tool_calls:
+            for tool_call in msg.tool_calls:
+                print(f"  - {tool_call.get('name', 'unknown')}: {tool_call.get('args', {})}")
 
     print("\nHuman-in-the-loop workflow complete!")
 

@@ -8,9 +8,8 @@ VelatirHITLMiddleware together for comprehensive governance.
 import asyncio
 import os
 
-from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent
-from langchain_core.tools import tool
+from langchain.tools import tool
+from langchain.agents import create_agent
 
 from langchain_velatir import VelatirGuardrailMiddleware, VelatirHITLMiddleware
 
@@ -38,7 +37,6 @@ async def main():
     """Run the combined example."""
     # Get API keys from environment
     velatir_api_key = os.getenv("VELATIR_API_KEY")
-    openai_api_key = os.getenv("OPENAI_API_KEY")
 
     if not velatir_api_key:
         print("Please set VELATIR_API_KEY environment variable")
@@ -47,13 +45,11 @@ async def main():
         print("Please set OPENAI_API_KEY environment variable")
         return
 
-    # Initialize the model
-    model = ChatOpenAI(model="gpt-4", api_key=openai_api_key)
-
     # Create both middleware components
     guardrail_middleware = VelatirGuardrailMiddleware(
         api_key=velatir_api_key,
         mode="blocking",
+        blocked_message="This response was blocked due to compliance violations.",
     )
 
     hitl_middleware = VelatirHITLMiddleware(
@@ -66,23 +62,17 @@ async def main():
     # Create the agent with both middleware components
     tools = [process_customer_data, generate_report, execute_transaction]
 
-    # Note: In LangChain 1.0, you would use:
-    # agent = create_react_agent(
-    #     model,
-    #     tools,
-    #     middleware=[guardrail_middleware, hitl_middleware]
-    # )
+    agent = create_agent(
+        model="openai:o3-mini",
+        tools=tools,
+        middleware=[guardrail_middleware, hitl_middleware]
+    )
 
     print("Example: Combined Guardrails + Human-in-the-Loop")
     print("=" * 50)
     print("\nThis agent has:")
-    print("\n1. GUARDRAILS (after_agent):")
-    print("   - GDPR compliance checking")
-    print("   - EU AI Act requirements")
-    print("   - Bias & Fairness validation")
-    print("\n2. HUMAN-IN-THE-LOOP (before_tool):")
-    print("   - Approval required for customer data processing")
-    print("   - Approval required for financial transactions")
+    print("\n1. GUARDRAILS (after_agent)")
+    print("\n2. HUMAN-IN-THE-LOOP (before_tool)")
     print("\n3. LAYERED PROTECTION:")
     print("   - HITL checks BEFORE tool execution")
     print("   - Guardrails check AFTER agent response")
@@ -91,45 +81,20 @@ async def main():
     # Example workflow
     print("Example Workflow:")
     print("-" * 50)
+    print("\nRunning agent with combined guardrails and HITL middleware...\n")
 
-    # 1. Safe operation (no approval, passes guardrails)
-    print("\n1. Generate a report (no approval needed)")
-    result = await generate_report.ainvoke({
-        "report_type": "sales",
-        "filters": {"year": 2024}
+    # Run a comprehensive example that exercises both middleware
+    result = agent.invoke({
+        "messages": [{"role": "user", "content": "Please process customer data for customer CUST-001 to update their email address to john.doe@example.com"}]
     })
-    print(f"   ✓ {result}")
-
-    # 2. Sensitive operation (needs approval + guardrail check)
-    print("\n2. Process customer data (approval required)")
-    print("   → Creating review task in Velatir...")
-    print("   → Waiting for human approval...")
-    try:
-        result = await process_customer_data.ainvoke({
-            "customer_id": "CUST-001",
-            "operation": "update_email"
-        })
-        print(f"   ✓ Approved and compliant: {result}")
-    except Exception as e:
-        print(f"   ✗ Blocked: {e}")
-
-    # 3. High-risk operation (needs approval + strict guardrail)
-    print("\n3. Execute transaction (approval required + guardrails)")
-    print("   → Creating review task in Velatir...")
-    print("   → Waiting for human approval...")
-    try:
-        result = await execute_transaction.ainvoke({
-            "amount": 5000.0,
-            "account": "ACC-123"
-        })
-        print(f"   ✓ Approved and compliant: {result}")
-    except Exception as e:
-        print(f"   ✗ Blocked: {e}")
 
     print("\n" + "=" * 50)
+    print("Agent completed!")
+    print(f"Final response: {result['messages'][-1].content}")
+    print("\n" + "=" * 50)
     print("Complete governance achieved!")
-    print("- Human oversight for sensitive operations")
-    print("- Automated compliance checking for all responses")
+    print("- Human oversight for sensitive operations (HITL)")
+    print("- Automated compliance checking for all responses (Guardrails)")
     print("- Audit trail in Velatir dashboard")
 
 

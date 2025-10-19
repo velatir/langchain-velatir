@@ -18,31 +18,39 @@ AgentState = dict[str, Any]
 
 # Import AgentMiddleware and hook_config from langchain
 try:
-    from langchain.agents import AgentMiddleware, hook_config
+    from langchain.agents.middleware import AgentMiddleware, hook_config
 except ImportError:
-    # Fallback for different LangChain versions
+    # Fallback for older LangChain versions
     try:
-        from langchain_core.agents import AgentMiddleware, hook_config
+        from langchain.agents import AgentMiddleware, hook_config
     except ImportError:
-        # Define placeholder for type hints if not available
-        class AgentMiddleware:  # type: ignore
-            """Placeholder for AgentMiddleware base class."""
+        try:
+            from langchain_core.agents import AgentMiddleware, hook_config
+        except ImportError:
+            # Define placeholder for type hints if not available
+            class AgentMiddleware:  # type: ignore
+                """Placeholder for AgentMiddleware base class."""
 
-            pass
+                pass
 
-        def hook_config(**kwargs):  # type: ignore
-            """Placeholder for hook_config decorator."""
+            def hook_config(**kwargs):  # type: ignore
+                """Placeholder for hook_config decorator."""
 
-            def decorator(func):
-                return func
+                def decorator(func):
+                    return func
 
-            return decorator
+                return decorator
 
 
-class Runtime:
-    """Placeholder for Runtime type if not available in imports."""
+# Import Runtime type
+try:
+    from langgraph.runtime import Runtime
+except ImportError:
+    # Fallback placeholder if not available
+    class Runtime:  # type: ignore
+        """Placeholder for Runtime type if not available in imports."""
 
-    pass
+        pass
 
 
 class VelatirGuardrailMiddleware(AgentMiddleware):
@@ -111,7 +119,7 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
         self.metadata = metadata or {}
 
     @hook_config(can_jump_to=["end"])
-    async def after_agent(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    def after_agent(self, state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
         """
         Hook that runs after the agent generates a response.
 
@@ -150,7 +158,7 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                 "mode": self.mode.value,
             }
 
-            response = await self.velatir_client.create_review_task(
+            response = self.velatir_client.create_review_task_sync(
                 function_name="agent_response",
                 args={
                     "response": content,
@@ -194,7 +202,7 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
             else:
                 # Pending or RequiresIntervention - wait for Velatir's decision
                 try:
-                    final_response = await self.velatir_client.wait_for_approval(
+                    final_response = self.velatir_client.wait_for_approval_sync(
                         review_task_id=response.review_task_id,
                         polling_interval=self.polling_interval,
                         timeout=self.approval_timeout,
@@ -325,11 +333,11 @@ class VelatirHITLMiddleware(AgentMiddleware):
         self.metadata = metadata or {}
 
     @hook_config(can_jump_to=["end"])
-    async def modify_model_request(
-        self, state: AgentState, runtime: Runtime, config: RunnableConfig
+    def after_model(
+        self, state: AgentState, runtime: Runtime
     ) -> dict[str, Any] | None:
         """
-        Hook that runs before tool execution.
+        Hook that runs after the model generates a response with tool calls.
 
         Intercepts tool calls and sends them to Velatir for evaluation. Velatir's
         backend determines if the tool call requires human approval based on your
@@ -339,7 +347,6 @@ class VelatirHITLMiddleware(AgentMiddleware):
         Args:
             state: Current agent state
             runtime: Agent runtime context
-            config: Runnable configuration
 
         Returns:
             Modified state or None
@@ -379,7 +386,7 @@ class VelatirHITLMiddleware(AgentMiddleware):
                 }
 
                 # Create review task - Velatir decides routing, approval requirements, etc.
-                response = await self.velatir_client.create_review_task(
+                response = self.velatir_client.create_review_task_sync(
                     function_name=tool_name,
                     args=tool_args,
                     doc=f"LangChain agent requesting to execute: {tool_name}",
@@ -393,7 +400,7 @@ class VelatirHITLMiddleware(AgentMiddleware):
                     continue
 
                 # Wait for Velatir's decision (may involve human review)
-                final_response = await self.velatir_client.wait_for_approval(
+                final_response = self.velatir_client.wait_for_approval_sync(
                     review_task_id=response.review_task_id,
                     polling_interval=self.polling_interval,
                     timeout=self.timeout,
