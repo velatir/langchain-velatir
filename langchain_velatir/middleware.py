@@ -3,7 +3,6 @@
 from typing import Any, Optional
 
 from langchain_core.messages import AIMessage
-from langchain_core.runnables.config import RunnableConfig
 
 from langchain_velatir.client import VelatirClient
 from langchain_velatir.exceptions import (
