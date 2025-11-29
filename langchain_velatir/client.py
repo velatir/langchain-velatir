@@ -6,12 +6,12 @@ from typing import Any, Optional
 try:
     import velatir
     from velatir import Client as VelatirSDKClient
-    from velatir.models import VelatirResponse
+    from velatir.models import VelatirResponse, TraceResponse
 except ImportError:
     # For testing when velatir SDK is not installed
     try:
         from tests import mock_velatir as velatir  # type: ignore
-        from tests.mock_velatir import Client as VelatirSDKClient, VelatirResponse  # type: ignore
+        from tests.mock_velatir import Client as VelatirSDKClient, VelatirResponse, TraceResponse  # type: ignore
     except ImportError:
         raise ImportError("velatir SDK is required. Install it with: pip install velatir")
 
@@ -208,3 +208,151 @@ class VelatirClient:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.close()
+
+    # ==================== Trace Methods (New API) ====================
+
+    async def create_trace(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> TraceResponse:
+        """
+        Create a trace for guardrail evaluation.
+
+        This is the primary method for submitting actions to Velatir's policy engine.
+        The trace will be evaluated through workflows, and if human intervention is
+        required, the response will include a review_task_id.
+
+        Args:
+            function_name: Name of the function/operation being traced
+            args: Arguments/data to be evaluated
+            tool_calls: Optional list of tool calls
+            doc: Optional documentation/description
+            llm_explanation: Optional LLM-generated explanation
+            metadata: Optional additional metadata
+
+        Returns:
+            TraceResponse with trace_id, status, processed_async, and optional review_task_id
+        """
+        return await self._client.create_trace(
+            function_name=function_name,
+            args=args,
+            tool_calls=tool_calls,
+            doc=doc,
+            llm_explanation=llm_explanation,
+            metadata=metadata,
+        )
+
+    def create_trace_sync(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> TraceResponse:
+        """Synchronous version of create_trace."""
+        return self._client.create_trace_sync(
+            function_name=function_name,
+            args=args,
+            tool_calls=tool_calls,
+            doc=doc,
+            llm_explanation=llm_explanation,
+            metadata=metadata,
+        )
+
+    async def evaluate_and_wait(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        polling_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> TraceResponse | VelatirResponse:
+        """
+        Create a trace and wait for approval if human review is required.
+
+        This is a convenience method that combines create_trace and wait_for_trace_approval.
+        It creates a trace, and if human review is required (reviewTaskId present),
+        automatically polls until a final decision is made.
+
+        Args:
+            function_name: Name of the function/operation being traced
+            args: Arguments/data to be evaluated
+            tool_calls: Optional list of tool calls
+            doc: Optional documentation/description
+            llm_explanation: Optional LLM-generated explanation
+            metadata: Optional additional metadata
+            polling_interval: Seconds between polling attempts
+            timeout: Optional timeout in seconds
+
+        Returns:
+            TraceResponse if no human review needed, VelatirResponse with final decision otherwise
+        """
+        start_time = time.time()
+        max_attempts = None
+
+        if timeout is not None:
+            max_attempts = int(timeout / polling_interval) + 1
+
+        try:
+            return await self._client.evaluate_and_wait(
+                function_name=function_name,
+                args=args,
+                tool_calls=tool_calls,
+                doc=doc,
+                llm_explanation=llm_explanation,
+                metadata=metadata,
+                polling_interval=polling_interval,
+                max_attempts=max_attempts,
+            )
+        except velatir.VelatirTimeoutError as e:
+            elapsed = time.time() - start_time
+            raise VelatirTimeoutError(
+                f"Approval timeout after {elapsed:.1f}s",
+                timeout_seconds=elapsed,
+            ) from e
+
+    def evaluate_and_wait_sync(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        polling_interval: float = 5.0,
+        timeout: Optional[float] = None,
+    ) -> TraceResponse | VelatirResponse:
+        """Synchronous version of evaluate_and_wait."""
+        start_time = time.time()
+        max_attempts = None
+
+        if timeout is not None:
+            max_attempts = int(timeout / polling_interval) + 1
+
+        try:
+            return self._client.evaluate_and_wait_sync(
+                function_name=function_name,
+                args=args,
+                tool_calls=tool_calls,
+                doc=doc,
+                llm_explanation=llm_explanation,
+                metadata=metadata,
+                polling_interval=polling_interval,
+                max_attempts=max_attempts,
+            )
+        except velatir.VelatirTimeoutError as e:
+            elapsed = time.time() - start_time
+            raise VelatirTimeoutError(
+                f"Approval timeout after {elapsed:.1f}s",
+                timeout_seconds=elapsed,
+            ) from e

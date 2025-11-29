@@ -147,7 +147,7 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
         # Extract message content for review
         content = last_message.content if hasattr(last_message, "content") else str(last_message)
 
-        # Create a review task in Velatir
+        # Create a trace in Velatir for guardrail evaluation
         # Velatir's backend will determine which policies apply, risk level, and routing
         try:
             # Combine provided metadata with middleware identifier
@@ -157,7 +157,8 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                 "mode": self.mode.value,
             }
 
-            response = self.velatir_client.create_review_task_sync(
+            # Use the new traces endpoint with automatic polling
+            response = self.velatir_client.evaluate_and_wait_sync(
                 function_name="agent_response",
                 args={
                     "response": content,
@@ -165,17 +166,22 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                 },
                 doc="LangChain agent response requiring governance review",
                 metadata=task_metadata,
+                polling_interval=self.polling_interval,
+                timeout=self.approval_timeout,
             )
 
-            # Check the immediate response state
+            # Check the response - could be TraceResponse or VelatirResponse
             if response.is_approved:
-                # Velatir approved immediately (low risk, no policies triggered)
+                # Approved (either immediately or after human review)
                 return None
 
-            elif response.is_denied or response.is_change_requested:
-                # Velatir denied (policy violation or human rejected)
+            elif response.is_rejected or getattr(response, "is_denied", False) or getattr(response, "is_change_requested", False):
+                # Rejected by policy or human reviewer
                 if self.mode == GuardrailMode.BLOCKING:
                     # Block the response
+                    trace_id = getattr(response, "trace_id", None)
+                    review_task_id = getattr(response, "review_task_id", None)
+                    reason = getattr(response, "requested_change", None)
                     return {
                         "messages": messages[:-1]
                         + [
@@ -183,8 +189,9 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                                 content=self.blocked_message,
                                 additional_kwargs={
                                     "velatir_blocked": True,
-                                    "review_task_id": response.review_task_id,
-                                    "reason": response.requested_change,
+                                    "trace_id": trace_id,
+                                    "review_task_id": review_task_id,
+                                    "reason": reason,
                                 },
                             )
                         ]
@@ -193,59 +200,31 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                     # Logging mode: add warning but don't block
                     if hasattr(last_message, "additional_kwargs"):
                         last_message.additional_kwargs["velatir_warning"] = {
-                            "review_task_id": response.review_task_id,
-                            "reason": response.requested_change,
+                            "trace_id": getattr(response, "trace_id", None),
+                            "review_task_id": getattr(response, "review_task_id", None),
+                            "reason": getattr(response, "requested_change", None),
                         }
                     return None
 
-            else:
-                # Pending or RequiresIntervention - wait for Velatir's decision
-                try:
-                    final_response = self.velatir_client.wait_for_approval_sync(
-                        review_task_id=response.review_task_id,
-                        polling_interval=self.polling_interval,
-                        timeout=self.approval_timeout,
-                    )
+            # For any other status, allow through
+            return None
 
-                    if final_response.is_approved:
-                        # Human approved
-                        return None
-
-                    elif final_response.is_denied or final_response.is_change_requested:
-                        # Human denied or requested changes
-                        if self.mode == GuardrailMode.BLOCKING:
-                            return {
-                                "messages": messages[:-1]
-                                + [
-                                    AIMessage(
-                                        content=self.blocked_message,
-                                        additional_kwargs={
-                                            "velatir_blocked": True,
-                                            "review_task_id": final_response.review_task_id,
-                                            "reason": final_response.requested_change,
-                                        },
-                                    )
-                                ]
-                            }
-                    return None
-
-                except VelatirTimeoutError:
-                    # Timeout waiting for approval
-                    if self.mode == GuardrailMode.BLOCKING:
-                        return {
-                            "messages": messages[:-1]
-                            + [
-                                AIMessage(
-                                    content="Response review timed out.",
-                                    additional_kwargs={
-                                        "velatir_blocked": True,
-                                        "review_task_id": response.review_task_id,
-                                        "reason": "Timeout waiting for approval",
-                                    },
-                                )
-                            ]
-                        }
-                    return None
+        except VelatirTimeoutError as e:
+            # Timeout waiting for approval
+            if self.mode == GuardrailMode.BLOCKING:
+                return {
+                    "messages": messages[:-1]
+                    + [
+                        AIMessage(
+                            content="Response review timed out.",
+                            additional_kwargs={
+                                "velatir_blocked": True,
+                                "reason": "Timeout waiting for approval",
+                            },
+                        )
+                    ]
+                }
+            return None
 
         except Exception as e:
             # On error, behavior depends on mode
@@ -382,45 +361,41 @@ class VelatirHITLMiddleware(AgentMiddleware):
                     "conversation_context": [str(m) for m in messages[-3:]],  # Last 3 messages
                 }
 
-                # Create review task - Velatir decides routing, approval requirements, etc.
-                response = self.velatir_client.create_review_task_sync(
+                # Use the new traces endpoint with automatic polling
+                response = self.velatir_client.evaluate_and_wait_sync(
                     function_name=tool_name,
                     args=tool_args,
                     doc=f"LangChain agent requesting to execute: {tool_name}",
                     llm_explanation="Tool call from LangChain agent workflow",
                     metadata=task_metadata,
-                )
-
-                # Check immediate response
-                if response.is_approved:
-                    # Velatir approved immediately (low risk, no intervention needed)
-                    continue
-
-                # Wait for Velatir's decision (may involve human review)
-                final_response = self.velatir_client.wait_for_approval_sync(
-                    review_task_id=response.review_task_id,
                     polling_interval=self.polling_interval,
                     timeout=self.timeout,
                 )
 
-                # Handle the decision
-                if final_response.is_approved:
-                    # Approved, continue to next tool
+                # Check response - could be TraceResponse or VelatirResponse
+                if response.is_approved:
+                    # Approved (either immediately or after human review)
                     continue
 
-                elif final_response.is_denied or final_response.is_change_requested:
-                    # Denied or changes requested, block execution
+                elif response.is_rejected or getattr(response, "is_denied", False) or getattr(response, "is_change_requested", False):
+                    # Rejected by policy or human reviewer
+                    trace_id = getattr(response, "trace_id", None)
+                    review_task_id = getattr(response, "review_task_id", None)
+                    reason = getattr(response, "requested_change", None)
                     raise VelatirApprovalDeniedError(
-                        f"Tool execution denied for {tool_name}: {final_response.requested_change or 'No reason provided'}",
-                        review_task_id=final_response.review_task_id,
-                        requested_change=final_response.requested_change,
+                        f"Tool execution denied for {tool_name}: {reason or 'No reason provided'}",
+                        review_task_id=review_task_id,
+                        requested_change=reason,
                     )
+
+                # For any other status, continue (treat as approved)
+                continue
 
             except VelatirTimeoutError as e:
                 # Timeout waiting for decision
                 raise VelatirTimeoutError(
                     f"Timeout waiting for approval of tool {tool_name} after {self.timeout}s",
-                    review_task_id=e.review_task_id,
+                    review_task_id=getattr(e, "review_task_id", None),
                     timeout_seconds=self.timeout,
                 ) from e
 
