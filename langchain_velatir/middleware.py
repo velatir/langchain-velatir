@@ -175,7 +175,11 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
                 # Approved (either immediately or after human review)
                 return None
 
-            elif response.is_rejected or getattr(response, "is_denied", False) or getattr(response, "is_change_requested", False):
+            elif (
+                response.is_rejected
+                or getattr(response, "is_denied", False)
+                or getattr(response, "is_change_requested", False)
+            ):
                 # Rejected by policy or human reviewer
                 if self.mode == GuardrailMode.BLOCKING:
                     # Block the response
@@ -377,7 +381,11 @@ class VelatirHITLMiddleware(AgentMiddleware):
                     # Approved (either immediately or after human review)
                     continue
 
-                elif response.is_rejected or getattr(response, "is_denied", False) or getattr(response, "is_change_requested", False):
+                elif (
+                    response.is_rejected
+                    or getattr(response, "is_denied", False)
+                    or getattr(response, "is_change_requested", False)
+                ):
                     # Rejected by policy or human reviewer
                     review_task_id = getattr(response, "review_task_id", None)
                     reason = getattr(response, "requested_change", None)

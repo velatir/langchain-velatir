@@ -47,6 +47,36 @@ class VelatirResponse:
     def requires_intervention(self) -> bool:
         return self.state == ReviewTaskState.REQUIRES_INTERVENTION
 
+    @property
+    def is_rejected(self) -> bool:
+        return self.state in (ReviewTaskState.DENIED, ReviewTaskState.CHANGE_REQUESTED)
+
+
+class TraceResponse:
+    """Mock Trace API response."""
+
+    def __init__(
+        self,
+        trace_id: str,
+        status: str = "approved",
+        processed_async: bool = False,
+        review_task_id: Optional[str] = None,
+        requested_change: Optional[str] = None,
+    ):
+        self.trace_id = trace_id
+        self.status = status
+        self.processed_async = processed_async
+        self.review_task_id = review_task_id
+        self.requested_change = requested_change
+
+    @property
+    def is_approved(self) -> bool:
+        return self.status == "approved"
+
+    @property
+    def is_rejected(self) -> bool:
+        return self.status in ("denied", "rejected", "change_requested")
+
 
 class VelatirTimeoutError(Exception):
     """Mock timeout error."""
@@ -137,6 +167,74 @@ class Client:
         return VelatirResponse(
             review_task_id=review_task_id,
             state=ReviewTaskState.APPROVED,
+        )
+
+    async def create_trace(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> TraceResponse:
+        """Mock create trace."""
+        return TraceResponse(
+            trace_id="mock-trace-id",
+            status="approved",
+            processed_async=False,
+        )
+
+    def create_trace_sync(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> TraceResponse:
+        """Mock create trace sync."""
+        return TraceResponse(
+            trace_id="mock-trace-id",
+            status="approved",
+            processed_async=False,
+        )
+
+    async def evaluate_and_wait(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        polling_interval: float = 5.0,
+        max_attempts: Optional[int] = None,
+    ) -> TraceResponse:
+        """Mock evaluate and wait."""
+        return TraceResponse(
+            trace_id="mock-trace-id",
+            status="approved",
+            processed_async=False,
+        )
+
+    def evaluate_and_wait_sync(
+        self,
+        function_name: str,
+        args: dict[str, Any],
+        tool_calls: Optional[list[str]] = None,
+        doc: Optional[str] = None,
+        llm_explanation: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+        polling_interval: float = 5.0,
+        max_attempts: Optional[int] = None,
+    ) -> TraceResponse:
+        """Mock evaluate and wait sync."""
+        return TraceResponse(
+            trace_id="mock-trace-id",
+            status="approved",
+            processed_async=False,
         )
 
     async def close(self) -> None:
