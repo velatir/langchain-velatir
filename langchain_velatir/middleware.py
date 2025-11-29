@@ -209,7 +209,7 @@ class VelatirGuardrailMiddleware(AgentMiddleware):
             # For any other status, allow through
             return None
 
-        except VelatirTimeoutError as e:
+        except VelatirTimeoutError:
             # Timeout waiting for approval
             if self.mode == GuardrailMode.BLOCKING:
                 return {
@@ -379,7 +379,6 @@ class VelatirHITLMiddleware(AgentMiddleware):
 
                 elif response.is_rejected or getattr(response, "is_denied", False) or getattr(response, "is_change_requested", False):
                     # Rejected by policy or human reviewer
-                    trace_id = getattr(response, "trace_id", None)
                     review_task_id = getattr(response, "review_task_id", None)
                     reason = getattr(response, "requested_change", None)
                     raise VelatirApprovalDeniedError(
